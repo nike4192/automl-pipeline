@@ -1,0 +1,11 @@
+{
+  "drift_threshold": 0.2,
+  "model_name": "automl-best-model",
+  "dataset_name": "titanic",
+  "target_column": "Survived",
+  "ab_traffic_split": 0.5,
+  "ab_strategy": "random",
+  "mlflow_tracking_uri": "./mlruns",
+  "log_dir": "logs",
+  "data_dir": "data"
+}

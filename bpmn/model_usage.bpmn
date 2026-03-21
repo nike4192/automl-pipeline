@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_1"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <collaboration id="Collaboration_Usage">
+    <participant id="Participant_User" name="Пользователь" processRef="Process_User" />
+    <participant id="Participant_System" name="ML-система (Flask API)" processRef="Process_System" />
+    <participant id="Participant_MLflow" name="MLflow Registry" processRef="Process_MLflow" />
+    <messageFlow id="MF_Request" sourceRef="Task_SendRequest" targetRef="Event_ReceiveRequest" name="HTTP-запрос" />
+    <messageFlow id="MF_Response" sourceRef="Task_ReturnResult" targetRef="Event_ReceiveResponse" name="Предсказание" />
+    <messageFlow id="MF_LoadModel" sourceRef="Task_LoadModel" targetRef="Task_ServeModel" name="Модель" />
+  </collaboration>
+
+  <!-- Пользователь -->
+  <process id="Process_User" isExecutable="false">
+    <startEvent id="Start_User" name="Необходимо&#10;предсказание" />
+    <task id="Task_PrepareData" name="Подготовить&#10;входные данные&#10;(признаки пассажира)" />
+    <task id="Task_SendRequest" name="Отправить&#10;HTTP-запрос&#10;на /predict" />
+    <intermediateCatchEvent id="Event_ReceiveResponse" name="Получить&#10;ответ" />
+    <task id="Task_UseResult" name="Использовать&#10;результат&#10;предсказания" />
+    <endEvent id="End_User" name="Предсказание&#10;получено" />
+
+    <sequenceFlow id="F1" sourceRef="Start_User" targetRef="Task_PrepareData" />
+    <sequenceFlow id="F2" sourceRef="Task_PrepareData" targetRef="Task_SendRequest" />
+    <sequenceFlow id="F3" sourceRef="Task_SendRequest" targetRef="Event_ReceiveResponse" />
+    <sequenceFlow id="F4" sourceRef="Event_ReceiveResponse" targetRef="Task_UseResult" />
+    <sequenceFlow id="F5" sourceRef="Task_UseResult" targetRef="End_User" />
+  </process>
+
+  <!-- ML-система -->
+  <process id="Process_System" isExecutable="false">
+    <startEvent id="Event_ReceiveRequest" name="Запрос&#10;получен" />
+    <task id="Task_ValidateInput" name="Валидация&#10;входных данных" />
+    <exclusiveGateway id="GW_Valid" name="Данные&#10;валидны?" />
+    <task id="Task_ErrorResponse" name="Вернуть ошибку&#10;(400 Bad Request)" />
+    <task id="Task_RouteAB" name="A/B роутинг:&#10;выбрать модель&#10;(Production / Staging)" />
+    <task id="Task_LoadModel" name="Загрузить модель&#10;из MLflow Registry" />
+    <task id="Task_Predict" name="Получить&#10;предсказание&#10;модели" />
+    <task id="Task_LogPrediction" name="Логировать:&#10;request_id, model_version,&#10;features, prediction" />
+    <task id="Task_ReturnResult" name="Вернуть ответ:&#10;prediction,&#10;probability,&#10;model_version" />
+    <endEvent id="End_System" name="Запрос&#10;обработан" />
+    <endEvent id="End_Error" name="Ошибка&#10;возвращена" />
+
+    <sequenceFlow id="S1" sourceRef="Event_ReceiveRequest" targetRef="Task_ValidateInput" />
+    <sequenceFlow id="S2" sourceRef="Task_ValidateInput" targetRef="GW_Valid" />
+    <sequenceFlow id="S3" sourceRef="GW_Valid" targetRef="Task_RouteAB" name="Да" />
+    <sequenceFlow id="S4" sourceRef="GW_Valid" targetRef="Task_ErrorResponse" name="Нет" />
+    <sequenceFlow id="S5" sourceRef="Task_RouteAB" targetRef="Task_LoadModel" />
+    <sequenceFlow id="S6" sourceRef="Task_LoadModel" targetRef="Task_Predict" />
+    <sequenceFlow id="S7" sourceRef="Task_Predict" targetRef="Task_LogPrediction" />
+    <sequenceFlow id="S8" sourceRef="Task_LogPrediction" targetRef="Task_ReturnResult" />
+    <sequenceFlow id="S9" sourceRef="Task_ReturnResult" targetRef="End_System" />
+    <sequenceFlow id="S10" sourceRef="Task_ErrorResponse" targetRef="End_Error" />
+  </process>
+
+  <!-- MLflow Registry -->
+  <process id="Process_MLflow" isExecutable="false">
+    <task id="Task_ServeModel" name="Хранение и выдача&#10;Production / Staging&#10;моделей" />
+  </process>
+
+  <!-- Диаграмма -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_Usage">
+
+      <!-- Pool: Пользователь -->
+      <bpmndi:BPMNShape id="Shape_Participant_User" bpmnElement="Participant_User" isHorizontal="true">
+        <dc:Bounds x="160" y="20" width="900" height="160" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Start_User" bpmnElement="Start_User">
+        <dc:Bounds x="220" y="82" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_PrepareData" bpmnElement="Task_PrepareData">
+        <dc:Bounds x="300" y="60" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_SendRequest" bpmnElement="Task_SendRequest">
+        <dc:Bounds x="490" y="60" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Event_ReceiveResponse" bpmnElement="Event_ReceiveResponse">
+        <dc:Bounds x="762" y="82" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_UseResult" bpmnElement="Task_UseResult">
+        <dc:Bounds x="840" y="60" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_End_User" bpmnElement="End_User">
+        <dc:Bounds x="1000" y="82" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <!-- Pool: ML-система -->
+      <bpmndi:BPMNShape id="Shape_Participant_System" bpmnElement="Participant_System" isHorizontal="true">
+        <dc:Bounds x="160" y="220" width="900" height="250" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Event_ReceiveRequest" bpmnElement="Event_ReceiveRequest">
+        <dc:Bounds x="220" y="312" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_ValidateInput" bpmnElement="Task_ValidateInput">
+        <dc:Bounds x="290" y="290" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_GW_Valid" bpmnElement="GW_Valid" isMarkerVisible="true">
+        <dc:Bounds x="440" y="305" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_ErrorResponse" bpmnElement="Task_ErrorResponse">
+        <dc:Bounds x="415" y="400" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_RouteAB" bpmnElement="Task_RouteAB">
+        <dc:Bounds x="520" y="290" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_LoadModel" bpmnElement="Task_LoadModel">
+        <dc:Bounds x="670" y="290" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_Predict" bpmnElement="Task_Predict">
+        <dc:Bounds x="670" y="230" width="120" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_LogPrediction" bpmnElement="Task_LogPrediction">
+        <dc:Bounds x="820" y="230" width="140" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_ReturnResult" bpmnElement="Task_ReturnResult">
+        <dc:Bounds x="820" y="310" width="140" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_End_System" bpmnElement="End_System">
+        <dc:Bounds x="990" y="327" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_End_Error" bpmnElement="End_Error">
+        <dc:Bounds x="540" y="412" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <!-- Pool: MLflow -->
+      <bpmndi:BPMNShape id="Shape_Participant_MLflow" bpmnElement="Participant_MLflow" isHorizontal="true">
+        <dc:Bounds x="160" y="510" width="900" height="100" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_ServeModel" bpmnElement="Task_ServeModel">
+        <dc:Bounds x="630" y="530" width="200" height="60" />
+      </bpmndi:BPMNShape>
+
+      <!-- Sequence Flows: User -->
+      <bpmndi:BPMNEdge id="Edge_F1" bpmnElement="F1"><di:waypoint x="256" y="100" /><di:waypoint x="300" y="100" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_F2" bpmnElement="F2"><di:waypoint x="440" y="100" /><di:waypoint x="490" y="100" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_F3" bpmnElement="F3"><di:waypoint x="610" y="100" /><di:waypoint x="762" y="100" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_F4" bpmnElement="F4"><di:waypoint x="798" y="100" /><di:waypoint x="840" y="100" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_F5" bpmnElement="F5"><di:waypoint x="960" y="100" /><di:waypoint x="1000" y="100" /></bpmndi:BPMNEdge>
+
+      <!-- Sequence Flows: System -->
+      <bpmndi:BPMNEdge id="Edge_S1" bpmnElement="S1"><di:waypoint x="256" y="330" /><di:waypoint x="290" y="330" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_S2" bpmnElement="S2"><di:waypoint x="410" y="330" /><di:waypoint x="440" y="330" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_S3" bpmnElement="S3"><di:waypoint x="490" y="330" /><di:waypoint x="520" y="330" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_S4" bpmnElement="S4"><di:waypoint x="465" y="355" /><di:waypoint x="465" y="400" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_S5" bpmnElement="S5"><di:waypoint x="640" y="330" /><di:waypoint x="670" y="330" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_S6" bpmnElement="S6"><di:waypoint x="730" y="290" /><di:waypoint x="730" y="280" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_S7" bpmnElement="S7"><di:waypoint x="790" y="255" /><di:waypoint x="820" y="255" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_S8" bpmnElement="S8"><di:waypoint x="890" y="290" /><di:waypoint x="890" y="310" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_S9" bpmnElement="S9"><di:waypoint x="960" y="345" /><di:waypoint x="990" y="345" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_S10" bpmnElement="S10"><di:waypoint x="515" y="430" /><di:waypoint x="540" y="430" /></bpmndi:BPMNEdge>
+
+      <!-- Message Flows -->
+      <bpmndi:BPMNEdge id="Edge_MF_Request" bpmnElement="MF_Request"><di:waypoint x="550" y="140" /><di:waypoint x="238" y="312" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_MF_Response" bpmnElement="MF_Response"><di:waypoint x="890" y="310" /><di:waypoint x="780" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_MF_LoadModel" bpmnElement="MF_LoadModel"><di:waypoint x="730" y="370" /><di:waypoint x="730" y="530" /></bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

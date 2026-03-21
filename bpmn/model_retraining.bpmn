@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_Retrain"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <collaboration id="Collaboration_Retrain">
+    <participant id="Participant_Airflow" name="Apache Airflow (Автоматизация)" processRef="Process_Airflow" />
+    <participant id="Participant_Human" name="ML-инженер (Human in the Loop)" processRef="Process_Human" />
+    <messageFlow id="MF_Notify" sourceRef="Task_NotifyEngineer" targetRef="Event_DriftAlert" name="Уведомление о drift" />
+    <messageFlow id="MF_ABResults" sourceRef="Task_SendABResults" targetRef="Event_ABResults" name="Результаты A/B теста" />
+    <messageFlow id="MF_Approve" sourceRef="Task_DecideRollout" targetRef="Event_ApprovalReceived" name="Решение" />
+  </collaboration>
+
+  <!-- Airflow Pipeline -->
+  <process id="Process_Airflow" isExecutable="false">
+    <startEvent id="Start_Timer" name="Ежедневный&#10;таймер&#10;(cron: 0 0 * * *)" />
+
+    <!-- Этап 1: Мониторинг drift -->
+    <task id="Task_LoadData" name="Загрузить&#10;reference и&#10;current данные" />
+    <task id="Task_CheckDrift" name="Проверка Data Drift&#10;(PSI, KS-тест,&#10;сдвиг среднего)" />
+    <exclusiveGateway id="GW_Drift" name="Drift&#10;обнаружен?&#10;(PSI > 0.2)" />
+    <task id="Task_LogNoDrift" name="Записать лог:&#10;drift не обнаружен" />
+    <endEvent id="End_NoDrift" name="Завершение&#10;(drift нет)" />
+
+    <!-- Этап 2: AutoML -->
+    <task id="Task_NotifyEngineer" name="Уведомить&#10;ML-инженера&#10;о drift" />
+    <task id="Task_RunAutoML" name="Запустить PyCaret&#10;AutoML:&#10;setup → compare_models&#10;→ save_model" />
+    <task id="Task_LogMLflow" name="Автологирование&#10;в MLflow&#10;(параметры, метрики)" />
+
+    <!-- Этап 3: Регистрация -->
+    <task id="Task_RegisterModel" name="Зарегистрировать&#10;модель в&#10;MLflow Registry&#10;(Staging)" />
+    <task id="Task_ValidateModel" name="Автоматическая&#10;валидация:&#10;Accuracy, F1,&#10;ROC-AUC" />
+    <exclusiveGateway id="GW_Validation" name="Метрики&#10;выше порога?" />
+    <task id="Task_RejectModel" name="Отклонить модель,&#10;записать причину" />
+    <endEvent id="End_Rejected" name="Модель&#10;отклонена" />
+
+    <!-- Этап 4: A/B тест -->
+    <task id="Task_StartABTest" name="Запустить A/B тест:&#10;Production (80%)&#10;vs Staging (20%)" />
+    <task id="Task_CollectMetrics" name="Собрать метрики:&#10;ML (Accuracy, F1)&#10;+ бизнес (latency)" />
+    <task id="Task_StatTest" name="Стат. анализ:&#10;T-тест, Chi-square&#10;(p-value &lt; 0.05?)" />
+    <task id="Task_SendABResults" name="Отправить&#10;результаты&#10;A/B теста" />
+
+    <!-- Этап 5: Rollout -->
+    <intermediateCatchEvent id="Event_ApprovalReceived" name="Получено&#10;решение" />
+    <exclusiveGateway id="GW_Approve" name="Одобрено?" />
+    <task id="Task_PromoteProduction" name="Перевести модель&#10;Staging → Production&#10;в MLflow" />
+    <task id="Task_ArchiveOld" name="Архивировать&#10;старую модель&#10;(Production → Archived)" />
+    <task id="Task_UpdateRouter" name="Обновить&#10;Flask Router:&#10;100% на новую модель" />
+    <endEvent id="End_Success" name="Новая модель&#10;в Production" />
+    <task id="Task_Rollback" name="Откат:&#10;удалить Staging,&#10;вернуть 100%&#10;на Production" />
+    <endEvent id="End_Rollback" name="Откат&#10;выполнен" />
+
+    <sequenceFlow id="A1" sourceRef="Start_Timer" targetRef="Task_LoadData" />
+    <sequenceFlow id="A2" sourceRef="Task_LoadData" targetRef="Task_CheckDrift" />
+    <sequenceFlow id="A3" sourceRef="Task_CheckDrift" targetRef="GW_Drift" />
+    <sequenceFlow id="A4" sourceRef="GW_Drift" targetRef="Task_LogNoDrift" name="Нет" />
+    <sequenceFlow id="A5" sourceRef="Task_LogNoDrift" targetRef="End_NoDrift" />
+    <sequenceFlow id="A6" sourceRef="GW_Drift" targetRef="Task_NotifyEngineer" name="Да" />
+    <sequenceFlow id="A7" sourceRef="Task_NotifyEngineer" targetRef="Task_RunAutoML" />
+    <sequenceFlow id="A8" sourceRef="Task_RunAutoML" targetRef="Task_LogMLflow" />
+    <sequenceFlow id="A9" sourceRef="Task_LogMLflow" targetRef="Task_RegisterModel" />
+    <sequenceFlow id="A10" sourceRef="Task_RegisterModel" targetRef="Task_ValidateModel" />
+    <sequenceFlow id="A11" sourceRef="Task_ValidateModel" targetRef="GW_Validation" />
+    <sequenceFlow id="A12" sourceRef="GW_Validation" targetRef="Task_StartABTest" name="Да" />
+    <sequenceFlow id="A13" sourceRef="GW_Validation" targetRef="Task_RejectModel" name="Нет" />
+    <sequenceFlow id="A14" sourceRef="Task_RejectModel" targetRef="End_Rejected" />
+    <sequenceFlow id="A15" sourceRef="Task_StartABTest" targetRef="Task_CollectMetrics" />
+    <sequenceFlow id="A16" sourceRef="Task_CollectMetrics" targetRef="Task_StatTest" />
+    <sequenceFlow id="A17" sourceRef="Task_StatTest" targetRef="Task_SendABResults" />
+    <sequenceFlow id="A18" sourceRef="Task_SendABResults" targetRef="Event_ApprovalReceived" />
+    <sequenceFlow id="A19" sourceRef="Event_ApprovalReceived" targetRef="GW_Approve" />
+    <sequenceFlow id="A20" sourceRef="GW_Approve" targetRef="Task_PromoteProduction" name="Да" />
+    <sequenceFlow id="A21" sourceRef="Task_PromoteProduction" targetRef="Task_ArchiveOld" />
+    <sequenceFlow id="A22" sourceRef="Task_ArchiveOld" targetRef="Task_UpdateRouter" />
+    <sequenceFlow id="A23" sourceRef="Task_UpdateRouter" targetRef="End_Success" />
+    <sequenceFlow id="A24" sourceRef="GW_Approve" targetRef="Task_Rollback" name="Нет" />
+    <sequenceFlow id="A25" sourceRef="Task_Rollback" targetRef="End_Rollback" />
+  </process>
+
+  <!-- Human in the Loop -->
+  <process id="Process_Human" isExecutable="false">
+    <intermediateCatchEvent id="Event_DriftAlert" name="Уведомление&#10;о drift" />
+    <task id="Task_ReviewDrift" name="Просмотреть&#10;отчёт о drift&#10;и данные" />
+    <intermediateCatchEvent id="Event_ABResults" name="Результаты&#10;A/B теста" />
+    <task id="Task_AnalyzeAB" name="Проанализировать&#10;метрики и&#10;стат. значимость" />
+    <task id="Task_DecideRollout" name="Принять решение:&#10;выкатить новую&#10;модель или откатить" />
+
+    <sequenceFlow id="H1" sourceRef="Event_DriftAlert" targetRef="Task_ReviewDrift" />
+    <sequenceFlow id="H2" sourceRef="Task_ReviewDrift" targetRef="Event_ABResults" />
+    <sequenceFlow id="H3" sourceRef="Event_ABResults" targetRef="Task_AnalyzeAB" />
+    <sequenceFlow id="H4" sourceRef="Task_AnalyzeAB" targetRef="Task_DecideRollout" />
+  </process>
+
+  <!-- Диаграмма -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Retrain">
+    <bpmndi:BPMNPlane id="BPMNPlane_Retrain" bpmnElement="Collaboration_Retrain">
+
+      <!-- Pool: Airflow -->
+      <bpmndi:BPMNShape id="Shape_P_Airflow" bpmnElement="Participant_Airflow" isHorizontal="true">
+        <dc:Bounds x="100" y="20" width="1700" height="400" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="S_Start" bpmnElement="Start_Timer">
+        <dc:Bounds x="150" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_LoadData" bpmnElement="Task_LoadData">
+        <dc:Bounds x="220" y="170" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_CheckDrift" bpmnElement="Task_CheckDrift">
+        <dc:Bounds x="370" y="170" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_GW_Drift" bpmnElement="GW_Drift" isMarkerVisible="true">
+        <dc:Bounds x="530" y="185" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_LogNoDrift" bpmnElement="Task_LogNoDrift">
+        <dc:Bounds x="505" y="50" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_End_NoDrift" bpmnElement="End_NoDrift">
+        <dc:Bounds x="637" y="62" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Notify" bpmnElement="Task_NotifyEngineer">
+        <dc:Bounds x="610" y="170" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_AutoML" bpmnElement="Task_RunAutoML">
+        <dc:Bounds x="760" y="170" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_LogML" bpmnElement="Task_LogMLflow">
+        <dc:Bounds x="920" y="170" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Register" bpmnElement="Task_RegisterModel">
+        <dc:Bounds x="920" y="280" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Validate" bpmnElement="Task_ValidateModel">
+        <dc:Bounds x="1070" y="280" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_GW_Val" bpmnElement="GW_Validation" isMarkerVisible="true">
+        <dc:Bounds x="1215" y="295" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Reject" bpmnElement="Task_RejectModel">
+        <dc:Bounds x="1190" y="370" width="100" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_End_Reject" bpmnElement="End_Rejected">
+        <dc:Bounds x="1312" y="377" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_ABStart" bpmnElement="Task_StartABTest">
+        <dc:Bounds x="1290" y="170" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Collect" bpmnElement="Task_CollectMetrics">
+        <dc:Bounds x="1290" y="280" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_StatTest" bpmnElement="Task_StatTest">
+        <dc:Bounds x="1430" y="280" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_SendAB" bpmnElement="Task_SendABResults">
+        <dc:Bounds x="1430" y="170" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_EvtApproval" bpmnElement="Event_ApprovalReceived">
+        <dc:Bounds x="1572" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_GW_Approve" bpmnElement="GW_Approve" isMarkerVisible="true">
+        <dc:Bounds x="1620" y="185" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Promote" bpmnElement="Task_PromoteProduction">
+        <dc:Bounds x="1690" y="100" width="100" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Archive" bpmnElement="Task_ArchiveOld">
+        <dc:Bounds x="1690" y="180" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_UpdateRouter" bpmnElement="Task_UpdateRouter">
+        <dc:Bounds x="1690" y="250" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_End_Success" bpmnElement="End_Success">
+        <dc:Bounds x="1722" y="330" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Rollback" bpmnElement="Task_Rollback">
+        <dc:Bounds x="1690" y="380" width="100" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_End_Rollback" bpmnElement="End_Rollback">
+        <dc:Bounds x="1722" y="440" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <!-- Pool: Human -->
+      <bpmndi:BPMNShape id="Shape_P_Human" bpmnElement="Participant_Human" isHorizontal="true">
+        <dc:Bounds x="100" y="460" width="1700" height="150" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_EvtDrift" bpmnElement="Event_DriftAlert">
+        <dc:Bounds x="652" y="517" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_ReviewDrift" bpmnElement="Task_ReviewDrift">
+        <dc:Bounds x="720" y="495" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_EvtAB" bpmnElement="Event_ABResults">
+        <dc:Bounds x="1472" y="517" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_AnalyzeAB" bpmnElement="Task_AnalyzeAB">
+        <dc:Bounds x="1520" y="495" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Decide" bpmnElement="Task_DecideRollout">
+        <dc:Bounds x="1660" y="495" width="120" height="80" />
+      </bpmndi:BPMNShape>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>
