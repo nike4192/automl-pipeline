@@ -10,7 +10,6 @@ DAG структура:
 4. notify_complete — логирование завершения
 """
 
-import os
 from datetime import datetime, timedelta
 from typing import Dict, Any
 
@@ -23,6 +22,7 @@ from airflow.operators.dummy import DummyOperator
 # ============================================================================
 # Примечание: в production окружении используйте полные пути или добавьте
 # в PYTHONPATH директорию проекта
+import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

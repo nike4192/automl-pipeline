@@ -10,8 +10,8 @@ mlflow==2.14.0
 # Orchestration
 apache-airflow==2.9.0
 
-# Web framework for A/B test router
-flask==3.0.3
+# Web framework for A/B test router (pinned for Airflow 2.9 compat)
+flask>=2.2,<2.3
 
 # Data drift monitoring
 evidently==0.4.33
